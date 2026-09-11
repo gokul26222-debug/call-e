@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
   if (process.env.MOCK_MODE !== "false") return NextResponse.json(mockResult(body));
   if (process.env.ALLOW_REAL_CALLS !== "true") return NextResponse.json({ error: "Real calling is disabled. Keep mock mode on, or explicitly set ALLOW_REAL_CALLS=true for an authorized test." }, { status: 403 });
   if (!process.env.CALLE_API_KEY) return NextResponse.json({ error: "Missing CALLE_API_KEY on the server." }, { status: 500 });
-  if (body.realCallConfirmed !== true) return NextResponse.json({ needs_confirmation: true, restaurant: body.restaurantName, phone: maskPhone(body.restaurantPhone), purpose: body.mode === "reservation" ? `Reserve a table for ${body.people} people.` : "Place the stated takeaway order." });
+  if (body.realCallConfirmed !== true) return NextResponse.json({ needs_confirmation: true, provider: body.provider, phone: maskPhone(body.phone), purpose: `Ask ${body.provider} about claim status, denial reason, required documents, deadline, and reference number.` });
 
   const fingerprint = crypto.createHash("sha256").update(JSON.stringify({ mode: body.mode, phone: body.phone, customer: body.claimantName, details: [body.provider, body.claimQuestion, body.amount, body.serviceDate] })).digest("hex");
   if (activeRequests.has(fingerprint)) return NextResponse.json({ error: "An identical live request is already active. Check its existing call status instead." }, { status: 409 });
