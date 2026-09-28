@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+// @ts-expect-error JavaScript module has no generated declaration file.
+import { syncSheetRow } from "../../../../lib/sheets.mjs";
 
 const BASE = process.env.CALLE_BASE_URL || "https://api.heycall-e.com";
 
@@ -31,6 +33,12 @@ export async function GET(
       { error: data?.message || data?.error || "CALL-E status request failed", details: data },
       { status: resp.status }
     );
+    }
+
+    const isTerminal = ["completed", "failed", "ended"].includes(String(data?.status || "").toLowerCase()) || data?.task_completed === true;
+    if (isTerminal) {
+      const sheet_sync = await syncSheetRow({ callResult: data });
+      return NextResponse.json({ ...data, sheet_sync });
     }
 
     return NextResponse.json(data);

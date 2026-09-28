@@ -3,6 +3,8 @@ import crypto from "node:crypto";
 // The helper is intentionally plain ESM so it can also be tested directly by Node.
 // @ts-expect-error JavaScript module has no generated declaration file.
 import { maskPhone, mockResult, validateRequest } from "../../../lib/tablecall.mjs";
+// @ts-expect-error JavaScript module has no generated declaration file.
+import { syncSheetRow } from "../../../lib/sheets.mjs";
 
 const BASE = process.env.CALLE_BASE_URL || "https://api.heycall-e.com";
 const activeRequests = new Map<string, string>();
@@ -14,7 +16,7 @@ function authorized(req: NextRequest) {
   return Boolean(secret && req.headers.get("x-claimbridge-secret") === secret);
 }
 
-function schema(mode: string) {
+function schema() {
   return { type: "object", required: ["outcome", "claim_status", "notes", "next_steps"], properties: { outcome: { type: "string", enum: ["needs_user_action", "resolved", "failed", "unknown"] }, claim_status: { type: "string" }, amount_at_issue: { type: "string" }, deadline: { type: "string" }, reference_number: { type: "string" }, documents_requested: { type: "array", items: { type: "string" } }, notes: { type: "string" }, next_steps: { type: "array", items: { type: "string" } } }, additionalProperties: false };
 }
 
@@ -27,7 +29,11 @@ export async function POST(req: NextRequest) {
   try { body = await req.json(); } catch { return NextResponse.json({ error: "Invalid JSON request." }, { status: 400 }); }
   const invalid = validateRequest(body);
   if (invalid) return NextResponse.json({ error: invalid }, { status: 400 });
-  if (process.env.MOCK_MODE !== "false") return NextResponse.json(mockResult(body));
+  if (process.env.MOCK_MODE !== "false") {
+    const result = mockResult(body);
+    const sheet_sync = await syncSheetRow({ requestBody: { ...body, maskedPhone: maskPhone(body.phone) }, callResult: result });
+    return NextResponse.json({ ...result, sheet_sync });
+  }
   if (!authorized(req)) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   if (process.env.ALLOW_REAL_CALLS !== "true") return NextResponse.json({ error: "Real calling is disabled. Keep mock mode on, or explicitly set ALLOW_REAL_CALLS=true for an authorized test." }, { status: 403 });
   if (!process.env.CALLE_API_KEY) return NextResponse.json({ error: "Missing CALLE_API_KEY on the server." }, { status: 500 });
@@ -41,7 +47,7 @@ export async function POST(req: NextRequest) {
   activeRequests.set(fingerprint, idempotencyKey);
   recentCalls.set(body.phone, Date.now());
   try {
-    const response = await fetch(`${BASE}/v1/calls`, { method: "POST", headers: { Authorization: `Bearer ${process.env.CALLE_API_KEY}`, "Content-Type": "application/json", "Idempotency-Key": idempotencyKey }, body: JSON.stringify({ task: buildTask(body), recipients: [{ phones: [body.phone], locale: "en-US" }], result_schema: schema(body.mode), metadata: { product: "claimbridge", mode: body.mode } }) });
+    const response = await fetch(`${BASE}/v1/calls`, { method: "POST", headers: { Authorization: `Bearer ${process.env.CALLE_API_KEY}`, "Content-Type": "application/json", "Idempotency-Key": idempotencyKey }, body: JSON.stringify({ task: buildTask(body), recipients: [{ phones: [body.phone], locale: "en-US" }], result_schema: schema(), metadata: { product: "claimbridge", mode: body.mode, claimantName: body.claimantName, maskedPhone: maskPhone(body.phone), category: "claim_review" } }) });
     const data = await response.json();
     if (!response.ok) return NextResponse.json({ error: data?.message || data?.error || "CALL-E could not start the call." }, { status: response.status });
     return NextResponse.json(data);
