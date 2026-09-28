@@ -6,6 +6,13 @@ import { maskPhone, mockResult, validateRequest } from "../../../lib/tablecall.m
 
 const BASE = process.env.CALLE_BASE_URL || "https://api.heycall-e.com";
 const activeRequests = new Map<string, string>();
+const recentCalls = new Map<string, number>();
+const COOLDOWN_MS = 10 * 60 * 1000;
+
+function authorized(req: NextRequest) {
+  const secret = process.env.CLAIMBRIDGE_API_SECRET;
+  return Boolean(secret && req.headers.get("x-claimbridge-secret") === secret);
+}
 
 function schema(mode: string) {
   return { type: "object", required: ["outcome", "claim_status", "notes", "next_steps"], properties: { outcome: { type: "string", enum: ["needs_user_action", "resolved", "failed", "unknown"] }, claim_status: { type: "string" }, amount_at_issue: { type: "string" }, deadline: { type: "string" }, reference_number: { type: "string" }, documents_requested: { type: "array", items: { type: "string" } }, notes: { type: "string" }, next_steps: { type: "array", items: { type: "string" } } }, additionalProperties: false };
@@ -16,18 +23,23 @@ function buildTask(b: Record<string, string>) {
 }
 
 export async function POST(req: NextRequest) {
-  const body = await req.json();
+  let body: Record<string, any>;
+  try { body = await req.json(); } catch { return NextResponse.json({ error: "Invalid JSON request." }, { status: 400 }); }
   const invalid = validateRequest(body);
   if (invalid) return NextResponse.json({ error: invalid }, { status: 400 });
   if (process.env.MOCK_MODE !== "false") return NextResponse.json(mockResult(body));
+  if (!authorized(req)) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   if (process.env.ALLOW_REAL_CALLS !== "true") return NextResponse.json({ error: "Real calling is disabled. Keep mock mode on, or explicitly set ALLOW_REAL_CALLS=true for an authorized test." }, { status: 403 });
   if (!process.env.CALLE_API_KEY) return NextResponse.json({ error: "Missing CALLE_API_KEY on the server." }, { status: 500 });
   if (body.realCallConfirmed !== true) return NextResponse.json({ needs_confirmation: true, provider: body.provider, phone: maskPhone(body.phone), purpose: `Ask ${body.provider} about claim status, denial reason, required documents, deadline, and reference number.` });
 
   const fingerprint = crypto.createHash("sha256").update(JSON.stringify({ mode: body.mode, phone: body.phone, customer: body.claimantName, details: [body.provider, body.claimQuestion, body.amount, body.serviceDate] })).digest("hex");
+  const lastCall = recentCalls.get(body.phone);
+  if (lastCall && Date.now() - lastCall < COOLDOWN_MS) return NextResponse.json({ error: "This number is on a 10-minute safety cooldown. Please wait before starting another call." }, { status: 429 });
   if (activeRequests.has(fingerprint)) return NextResponse.json({ error: "An identical live request is already active. Check its existing call status instead." }, { status: 409 });
   const idempotencyKey = `tablecall_${fingerprint}`;
   activeRequests.set(fingerprint, idempotencyKey);
+  recentCalls.set(body.phone, Date.now());
   try {
     const response = await fetch(`${BASE}/v1/calls`, { method: "POST", headers: { Authorization: `Bearer ${process.env.CALLE_API_KEY}`, "Content-Type": "application/json", "Idempotency-Key": idempotencyKey }, body: JSON.stringify({ task: buildTask(body), recipients: [{ phones: [body.phone], locale: "en-US" }], result_schema: schema(body.mode), metadata: { product: "claimbridge", mode: body.mode } }) });
     const data = await response.json();
