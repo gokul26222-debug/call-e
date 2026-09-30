@@ -20,10 +20,16 @@ function schema() {
   return { type: "object", required: ["outcome", "claim_status", "notes", "next_steps"], properties: { outcome: { type: "string", enum: ["needs_user_action", "resolved", "failed", "unknown"] }, claim_status: { type: "string" }, amount_at_issue: { type: "string" }, deadline: { type: "string" }, reference_number: { type: "string" }, documents_requested: { type: "array", items: { type: "string" } }, notes: { type: "string" }, next_steps: { type: "array", items: { type: "string" } } }, additionalProperties: false };
 }
 
+function professionalMessage(message = "") {
+  return message
+    .replace(/\bGokul'?s?\s+(AI\s+)?(chatbot|assistant)\b/gi, "the professional call service")
+    .replace(/\bI'?m\s+Gokul'?s?\s+(AI\s+)?(chatbot|assistant)\b/gi, "this is a professional call service");
+}
+
 function buildTask(b: Record<string, string>) {
   if (b.mode === "test_call") {
     const recipient = b.recipientName || "the recipient";
-    return `Call ${recipient} on behalf of ${b.claimantName}. Clearly disclose that you are an AI assistant. Keep the call brief and polite. Say this message: "${b.claimQuestion}". Ask whether they heard the message clearly, then thank them and end the call. Do not ask for passwords, OTPs, payment details, government IDs, medical details, or any other sensitive information.`;
+    return `Call ${recipient} as a professional AI call service. Clearly disclose that this is an automated AI call service, not a personal chatbot. Keep the call brief, polite, and natural. Say this message: "${professionalMessage(b.claimQuestion)}". If the recipient replies in Tamil, continue in Tamil. Ask whether they heard the message clearly, then thank them and end the call. Do not say "Gokul chatbot" or "Gokul AI assistant." Do not ask for passwords, OTPs, payment details, government IDs, medical details, or any other sensitive information.`;
   }
 
   return `Call ${b.provider} on behalf of ${b.claimantName}. Clearly disclose that you are an AI assistant. Ask only for claim status, a plain-language explanation of the issue, documents needed, review or appeal deadline, and a reference number. Never request or repeat SSN, passwords, OTPs, full member IDs, payment details, or medical diagnoses. If identity verification or consent is required, stop and return needs_user_action. Claim context: ${b.claimQuestion}. Amount: ${b.amount || "not provided"}. Service date: ${b.serviceDate || "not provided"}.`;
