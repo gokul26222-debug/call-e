@@ -22,7 +22,8 @@ function schema() {
 
 function buildTask(b: Record<string, string>) {
   if (b.mode === "test_call") {
-    return `Call the recipient on behalf of ${b.claimantName}. Clearly disclose that you are an AI assistant. Keep the call brief and polite. Say this message: "${b.claimQuestion}". Ask whether they heard the message clearly, then thank them and end the call. Do not ask for passwords, OTPs, payment details, government IDs, medical details, or any other sensitive information.`;
+    const recipient = b.recipientName || "the recipient";
+    return `Call ${recipient} on behalf of ${b.claimantName}. Clearly disclose that you are an AI assistant. Keep the call brief and polite. Say this message: "${b.claimQuestion}". Ask whether they heard the message clearly, then thank them and end the call. Do not ask for passwords, OTPs, payment details, government IDs, medical details, or any other sensitive information.`;
   }
 
   return `Call ${b.provider} on behalf of ${b.claimantName}. Clearly disclose that you are an AI assistant. Ask only for claim status, a plain-language explanation of the issue, documents needed, review or appeal deadline, and a reference number. Never request or repeat SSN, passwords, OTPs, full member IDs, payment details, or medical diagnoses. If identity verification or consent is required, stop and return needs_user_action. Claim context: ${b.claimQuestion}. Amount: ${b.amount || "not provided"}. Service date: ${b.serviceDate || "not provided"}.`;
@@ -57,7 +58,7 @@ export async function POST(req: NextRequest) {
   activeRequests.set(fingerprint, idempotencyKey);
   recentCalls.set(body.phone, Date.now());
   try {
-    const response = await fetch(`${BASE}/v1/calls`, { method: "POST", headers: { Authorization: `Bearer ${process.env.CALLE_API_KEY}`, "Content-Type": "application/json", "Idempotency-Key": idempotencyKey }, body: JSON.stringify({ task: buildTask(body), recipients: [{ phones: [body.phone], locale: localeFor(body) }], result_schema: schema(), metadata: { product: "claimbridge", mode: body.mode, claimantName: body.claimantName, maskedPhone: maskPhone(body.phone), category: body.mode === "test_call" ? "test_call" : "claim_review" } }) });
+    const response = await fetch(`${BASE}/v1/calls`, { method: "POST", headers: { Authorization: `Bearer ${process.env.CALLE_API_KEY}`, "Content-Type": "application/json", "Idempotency-Key": idempotencyKey }, body: JSON.stringify({ task: buildTask(body), recipients: [{ phones: [body.phone], locale: localeFor(body) }], result_schema: schema(), metadata: { product: "claimbridge", mode: body.mode, claimantName: body.claimantName, recipientName: body.recipientName, maskedPhone: maskPhone(body.phone), category: body.mode === "test_call" ? "test_call" : "claim_review" } }) });
     const data = await response.json();
     if (!response.ok) return NextResponse.json({ error: data?.message || data?.error || "CALL-E could not start the call." }, { status: response.status });
     return NextResponse.json(data);
