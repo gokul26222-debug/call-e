@@ -21,6 +21,10 @@ function schema() {
 }
 
 function buildTask(b: Record<string, string>) {
+  if (b.mode === "test_call") {
+    return `Call the recipient on behalf of ${b.claimantName}. Clearly disclose that you are an AI assistant. Keep the call brief and polite. Say this message: "${b.claimQuestion}". Ask whether they heard the message clearly, then thank them and end the call. Do not ask for passwords, OTPs, payment details, government IDs, medical details, or any other sensitive information.`;
+  }
+
   return `Call ${b.provider} on behalf of ${b.claimantName}. Clearly disclose that you are an AI assistant. Ask only for claim status, a plain-language explanation of the issue, documents needed, review or appeal deadline, and a reference number. Never request or repeat SSN, passwords, OTPs, full member IDs, payment details, or medical diagnoses. If identity verification or consent is required, stop and return needs_user_action. Claim context: ${b.claimQuestion}. Amount: ${b.amount || "not provided"}. Service date: ${b.serviceDate || "not provided"}.`;
 }
 
